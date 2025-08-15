@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../models//task.dart';
 
 class TasksScreen extends StatefulWidget {
   const TasksScreen({super.key});
@@ -8,7 +9,16 @@ class TasksScreen extends StatefulWidget {
 }
 
 class _TasksScreenState extends State<TasksScreen> {
-  final List<String> tasks = ["Skończyć taska", "Kupić mleko"];
+  final List<Task> tasks = <Task>[
+    Task(id: 1, title: 'Kupić mleko', deadLine: DateTime(2025, 08, 15, 19)),
+    Task(
+      id: 2,
+      title: 'Napisać kod w Flutterze',
+      deadLine: DateTime(2025, 08, 15, 19),
+      isDone: true,
+    ),
+  ];
+
   final TextEditingController _titleCtrl = TextEditingController();
 
   @override
@@ -21,7 +31,26 @@ class _TasksScreenState extends State<TasksScreen> {
       ),
       body: ListView.builder(
         itemCount: tasks.length,
-        itemBuilder: (context, i) => ListTile(title: Text(tasks[i])),
+        itemBuilder: (context, i) {
+          final task = tasks[i];
+          return CheckboxListTile(
+            value: task.isDone,
+            onChanged: (_) {
+              setState(() {
+                tasks[i] = task.copyWith(isDone: !task.isDone);
+              });
+            },
+            title: Text(
+              task.title,
+              style: task.isDone
+                  ? const TextStyle(
+                      decoration: TextDecoration.lineThrough,
+                      color: Colors.grey,
+                    )
+                  : null,
+            ),
+          );
+        },
       ),
     );
   }
@@ -33,9 +62,20 @@ class _TasksScreenState extends State<TasksScreen> {
   }
 
   void _addTask(String title) {
-    final task = title.trim();
-    if (task.isEmpty) return;
-    setState(() => tasks.add(task));
+    final taskTitle = title.trim();
+    if (taskTitle.isEmpty) return;
+    setState(() {
+      tasks.add(
+        Task(
+          id: DateTime.now().millisecondsSinceEpoch,
+          title: taskTitle,
+          deadLine: DateTime.fromMillisecondsSinceEpoch(
+            DateTime.now().millisecondsSinceEpoch + 360000,
+          ),
+          isDone: false,
+        ),
+      );
+    });
   }
 
   Future<void> _openAddDialog() async {
