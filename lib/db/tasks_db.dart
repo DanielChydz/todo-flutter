@@ -37,15 +37,15 @@ class TasksDb {
           $colTitle TEXT NOT NULL,
           $colDescription TEXT,
           $colDeadLine TEXT NOT NULL,
-          $colIsDone BIT NOT NULL);
+          $colIsDone BIT NOT NULL DEFAULT 0);
           """);
       },
     );
   }
 
-  Future<void> insertTask(Task task) async {
+  Future<int> insertTask(Task task) async {
     final db = await database;
-    await db.insert(
+    return await db.insert(
       tableName,
       task.toMap(),
       conflictAlgorithm: ConflictAlgorithm.replace,
@@ -59,5 +59,29 @@ class TasksDb {
       orderBy: "$colIsDone ASC, $colTitle COLLATE NOCASE ASC",
     );
     return rows.map((m) => Task.fromMap(m)).toList();
+  }
+
+  Future<int> updateTask(Task task) async {
+    if (task.id == null) {
+      throw ArgumentError("updateTask: task.id == null");
+    }
+    final db = await database;
+
+    final data = Map<String, Object?>.from(task.toMap());
+    data.remove("id");
+
+    return await db.update(
+      "tasks",
+      data,
+      where: "id = ?",
+      whereArgs: [task.id],
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<int> deleteTask(int id) async {
+    final db = await database;
+
+    return await db.delete("tasks", where: "id = ?", whereArgs: [id]);
   }
 }
