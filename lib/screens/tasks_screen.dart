@@ -34,80 +34,130 @@ class _TasksScreenState extends State<TasksScreen> {
                     itemCount: _tasks.length,
                     itemBuilder: (context, i) {
                       final task = _tasks[i];
-                      return CheckboxListTile(
-                        controlAffinity: ListTileControlAffinity.leading,
-                        value: task.isDone,
-                        fillColor: WidgetStateProperty.resolveWith((states) {
-                          if (states.contains(WidgetState.selected)) {
-                            return Colors.green;
-                          }
-                        }),
-                        onChanged: (_) async {
-                          setState(() {
-                            _tasks[i] = task.copyWith(isDone: !task.isDone);
-                          });
-                          try {
-                            await TasksDb.instance.updateTask(_tasks[i]);
-                          } catch (e) {
-                            debugPrint("Error when updating task: $e");
-                          }
-                        },
-                        title: Text(
-                          task.title,
-                          style: task.isDone
-                              ? const TextStyle(
-                                  decoration: TextDecoration.lineThrough,
-                                  color: Colors.grey,
-                                )
-                              : null,
+                      return Dismissible(
+                        key: ValueKey(task.id ?? '${task.title}-$i'),
+                        direction: DismissDirection.startToEnd,
+                        background: Container(
+                          color: Colors.red,
+                          alignment: Alignment.centerLeft,
+                          padding: EdgeInsets.symmetric(horizontal: 16),
+                          child: Icon(Icons.delete, color: Colors.white),
                         ),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if ((task.description ?? "").isNotEmpty)
-                              Text(
-                                task.description!,
-                                style: task.isDone
-                                    ? const TextStyle(
-                                        decoration: TextDecoration.lineThrough,
-                                        color: Colors.grey,
-                                      )
-                                    : const TextStyle(color: Colors.black54),
-                              ),
-                            Row(
-                              children: [
-                                const Icon(
-                                  Icons.schedule,
-                                  size: 14,
-                                  color: Colors.grey,
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  _formatDeadline(task.deadLine),
-                                  style: const TextStyle(
-                                    fontStyle: FontStyle.italic,
-                                    color: Colors.blueGrey,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                        secondary: IconButton(
-                          icon: const Icon(
-                            Icons.edit,
-                            size: 18,
-                            color: Colors.grey,
+                        onDismissed: (_) => _deleteTaskAfterSwipe(task, i),
+                        child: CheckboxListTile(
+                          controlAffinity: ListTileControlAffinity.leading,
+                          value: task.isDone,
+                          fillColor: WidgetStateProperty.resolveWith((states) {
+                            if (states.contains(WidgetState.selected)) {
+                              return Colors.green;
+                            }
+                            return null;
+                          }),
+                          onChanged: (_) async {
+                            setState(() {
+                              _tasks[i] = task.copyWith(isDone: !task.isDone);
+                            });
+                            try {
+                              await TasksDb.instance.updateTask(_tasks[i]);
+                            } catch (e) {
+                              debugPrint("Error when updating task: $e");
+                            }
+                          },
+                          title: Text(
+                            task.title,
+                            style: task.isDone
+                                ? const TextStyle(
+                                    decoration: TextDecoration.lineThrough,
+                                    color: Colors.grey,
+                                  )
+                                : null,
                           ),
-                          splashRadius: 18,
-                          tooltip: 'Edytuj',
-                          onPressed: () => _openEditDialog(task),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if ((task.description ?? "").isNotEmpty)
+                                Text(
+                                  task.description!,
+                                  style: task.isDone
+                                      ? const TextStyle(
+                                          decoration:
+                                              TextDecoration.lineThrough,
+                                          color: Colors.grey,
+                                        )
+                                      : const TextStyle(color: Colors.black54),
+                                ),
+                              Row(
+                                children: [
+                                  const Icon(
+                                    Icons.schedule,
+                                    size: 14,
+                                    color: Colors.grey,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    _formatDeadline(task.deadLine),
+                                    style: const TextStyle(
+                                      fontStyle: FontStyle.italic,
+                                      color: Colors.blueGrey,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                          secondary: IconButton(
+                            icon: const Icon(
+                              Icons.edit,
+                              size: 18,
+                              color: Colors.grey,
+                            ),
+                            splashRadius: 18,
+                            tooltip: 'Edytuj',
+                            onPressed: () => _openEditDialog(task),
+                          ),
                         ),
                       );
                     },
                   )),
     );
+  }
+
+  Future<void> _deleteTaskAfterSwipe(Task task, int index) async {
+    final messenger = ScaffoldMessenger.of(context);
+
+    setState(() {
+      _tasks.removeAt(index);
+    });
+
+    final controller = messenger.showSnackBar(
+      SnackBar(
+        content: Text('Usunięto zadanie: ${task.title}'),
+        action: SnackBarAction(
+          label: 'Cofnij',
+          onPressed: () {
+            setState(() {
+              _tasks.insert(index, task);
+            });
+          },
+        ),
+        duration: const Duration(seconds: 7),
+      ),
+    );
+
+    await controller.closed;
+    final stillThere = _tasks.any((t) => t.id == task.id);
+    if (!stillThere && task.id != null) {
+      try {
+        await TasksDb.instance.deleteTask(task.id!);
+      } catch (e) {
+        // revert in case of failure
+        setState(() {
+          _tasks.insert(index, task);
+        });
+        messenger.showSnackBar(SnackBar(content: Text('Błąd usuwania: $e')));
+      }
+    }
   }
 
   Future<void> _insertOrUpdateTask(Task task) async {
