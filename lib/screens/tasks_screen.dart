@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import '../models//task.dart';
+import '../models/task.dart';
+import '../db/tasks_db.dart';
 
 class TasksScreen extends StatefulWidget {
   const TasksScreen({super.key});
@@ -9,15 +10,8 @@ class TasksScreen extends StatefulWidget {
 }
 
 class _TasksScreenState extends State<TasksScreen> {
-  final List<Task> tasks = <Task>[
-    Task(id: 1, title: 'Kupić mleko', deadLine: DateTime(2025, 08, 15, 19)),
-    Task(
-      id: 2,
-      title: 'Napisać kod w Flutterze',
-      deadLine: DateTime(2025, 08, 15, 19),
-      isDone: true,
-    ),
-  ];
+  List<Task> tasks = <Task>[];
+  bool _loading = true;
 
   final TextEditingController _titleCtrl = TextEditingController();
 
@@ -29,29 +23,35 @@ class _TasksScreenState extends State<TasksScreen> {
         onPressed: _openAddDialog,
         child: const Icon(Icons.add),
       ),
-      body: ListView.builder(
-        itemCount: tasks.length,
-        itemBuilder: (context, i) {
-          final task = tasks[i];
-          return CheckboxListTile(
-            value: task.isDone,
-            onChanged: (_) {
-              setState(() {
-                tasks[i] = task.copyWith(isDone: !task.isDone);
-              });
-            },
-            title: Text(
-              task.title,
-              style: task.isDone
-                  ? const TextStyle(
-                      decoration: TextDecoration.lineThrough,
-                      color: Colors.grey,
-                    )
-                  : null,
-            ),
-          );
-        },
-      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : (tasks.isEmpty
+                ? const Center(
+                    child: Text("Brak zadań. Kliknij +, by dodać pierwsze"),
+                  )
+                : ListView.builder(
+                    itemCount: tasks.length,
+                    itemBuilder: (context, i) {
+                      final task = tasks[i];
+                      return CheckboxListTile(
+                        value: task.isDone,
+                        onChanged: (_) {
+                          setState(() {
+                            tasks[i] = task.copyWith(isDone: !task.isDone);
+                          });
+                        },
+                        title: Text(
+                          task.title,
+                          style: task.isDone
+                              ? const TextStyle(
+                                  decoration: TextDecoration.lineThrough,
+                                  color: Colors.grey,
+                                )
+                              : null,
+                        ),
+                      );
+                    },
+                  )),
     );
   }
 
@@ -61,20 +61,22 @@ class _TasksScreenState extends State<TasksScreen> {
     super.dispose();
   }
 
-  void _addTask(String title) {
+  Future<void> _addTask(String title) async {
     final taskTitle = title.trim();
     if (taskTitle.isEmpty) return;
+
+    final task = Task(
+      title: taskTitle,
+      deadLine: (DateTime.fromMillisecondsSinceEpoch(
+        DateTime.now().millisecondsSinceEpoch + 360000,
+      )).toIso8601String(),
+      isDone: false,
+    );
+
+    await TasksDb.instance.insertTask(task);
+
     setState(() {
-      tasks.add(
-        Task(
-          id: DateTime.now().millisecondsSinceEpoch,
-          title: taskTitle,
-          deadLine: DateTime.fromMillisecondsSinceEpoch(
-            DateTime.now().millisecondsSinceEpoch + 360000,
-          ),
-          isDone: false,
-        ),
-      );
+      tasks.add(task);
     });
   }
 
@@ -110,5 +112,24 @@ class _TasksScreenState extends State<TasksScreen> {
         );
       },
     );
+  }
+
+  Future<void> _loadTasks() async {
+    try {
+      final loaded = await TasksDb.instance.getAllTasks();
+      setState(() {
+        tasks = loaded;
+        _loading = false;
+      });
+    } catch (e) {
+      debugPrint("Error when loading tasks: $e");
+      setState(() => _loading = false);
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTasks();
   }
 }

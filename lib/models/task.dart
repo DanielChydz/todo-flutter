@@ -2,7 +2,7 @@ class Task {
   final int? id;
   final String title;
   final String? description;
-  final DateTime deadLine;
+  final String deadLine;
   final bool isDone;
 
   const Task({
@@ -17,7 +17,7 @@ class Task {
     int? id,
     String? title,
     String? description,
-    DateTime? deadLine,
+    String? deadLine,
     bool? isDone,
   }) {
     return Task(
@@ -27,5 +27,25 @@ class Task {
       deadLine: deadLine ?? this.deadLine,
       isDone: isDone ?? this.isDone,
     );
+  }
+
+  factory Task.fromMap(Map<String, Object?> map) {
+    return Task(
+      id: map["id"] as int,
+      title: map["title"] as String,
+      description: map["description"] as String?,
+      deadLine: map["deadline"] as String,
+      isDone: (map["is_done"] as int) == 1,
+    );
+  }
+
+  Map<String, Object?> toMap() {
+    return <String, Object?>{
+      "id": id,
+      "title": title,
+      "description": description,
+      "deadline": deadLine,
+      "is_done": isDone ? 1 : 0,
+    };
   }
 }
