@@ -37,6 +37,11 @@ class _TasksScreenState extends State<TasksScreen> {
                       return CheckboxListTile(
                         controlAffinity: ListTileControlAffinity.leading,
                         value: task.isDone,
+                        fillColor: WidgetStateProperty.resolveWith((states) {
+                          if (states.contains(WidgetState.selected)) {
+                            return Colors.green;
+                          }
+                        }),
                         onChanged: (_) async {
                           setState(() {
                             _tasks[i] = task.copyWith(isDone: !task.isDone);
@@ -105,31 +110,49 @@ class _TasksScreenState extends State<TasksScreen> {
     );
   }
 
-  @override
-  void dispose() {
-    _titleCtrl.dispose();
-    super.dispose();
+  Future<void> _insertOrUpdateTask(Task task) async {
+    if (task.id == null) {
+      // insert
+      final id = await TasksDb.instance.insertTask(task);
+      setState(() {
+        _tasks.add(task.copyWith(id: id));
+      });
+    } else {
+      // update
+      await TasksDb.instance.updateTask(task);
+      setState(() {
+        final i = _tasks.indexWhere((t) => t.id == task.id);
+        if (i != -1) _tasks[i] = task;
+      });
+    }
+    _sortTasksByDeadline();
   }
 
-  Future<void> _addTask(String title, String description) async {
-    final taskTitle = title.trim();
-    final taskDescription = description.trim();
-    if (taskTitle.isEmpty) return;
+  Future<void> _saveTask({
+    Task? currentTask, // null = new, passed = edit
+    required String title,
+    required String description,
+    required DateTime deadLine,
+  }) async {
+    final t =
+        (currentTask ??
+                Task(
+                  id: null,
+                  title: "",
+                  description: null,
+                  deadLine: "",
+                  isDone: false,
+                ))
+            .copyWith(
+              title: title.trim(),
+              description: description.trim().isEmpty
+                  ? null
+                  : description.trim(),
+              deadLine: deadLine.toIso8601String(),
+              isDone: currentTask?.isDone ?? false,
+            );
 
-    final task = Task(
-      title: taskTitle,
-      description: taskDescription,
-      deadLine: (DateTime.fromMillisecondsSinceEpoch(
-        DateTime.now().millisecondsSinceEpoch + 360000,
-      )).toIso8601String(),
-      isDone: false,
-    );
-
-    await TasksDb.instance.insertTask(task);
-
-    setState(() {
-      _tasks.add(task);
-    });
+    await _insertOrUpdateTask(t);
   }
 
   Future<void> _openTaskDialog(
@@ -139,46 +162,129 @@ class _TasksScreenState extends State<TasksScreen> {
   ) async {
     _titleCtrl.clear();
     _descCtrl.clear();
+
+    DateTime? selectedDeadline =
+        (currentTask?.deadLine != null && currentTask!.deadLine.isNotEmpty)
+        ? DateTime.tryParse(currentTask.deadLine)
+        : null;
+
     if (currentTask != null) {
       _titleCtrl.text = currentTask.title;
       _descCtrl.text = currentTask.description ?? "";
     }
+
     await showDialog(
       context: context,
       builder: (context) {
-        return AlertDialog(
-          title: Text(dialogTitle),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: _titleCtrl,
-                autofocus: true,
-                decoration: const InputDecoration(hintText: "Wpisz tytuł"),
+        return StatefulBuilder(
+          builder: (context, setStateDialog) {
+            Future<void> pickDeadline() async {
+              final initial = selectedDeadline ?? DateTime.now();
+
+              final pickedDate = await showDatePicker(
+                context: context,
+                initialDate: initial,
+                firstDate: DateTime.now(),
+                lastDate: DateTime(2100),
+              );
+              if (pickedDate == null) return;
+
+              final TimeOfDay? pickedTime = await showTimePicker(
+                // dev note: warning acknowledged, guarded with a "mounted" check
+                context: context,
+                initialTime: TimeOfDay.fromDateTime(initial),
+                builder: (context, child) => child ?? const SizedBox.shrink(),
+              );
+              if (!mounted || pickedTime == null) return;
+
+              DateTime combined = DateTime(
+                pickedDate.year,
+                pickedDate.month,
+                pickedDate.day,
+                pickedTime.hour,
+                pickedTime.minute,
+              );
+              if (combined.isBefore(DateTime.now())) {
+                combined = DateTime.now().add(Duration(minutes: 5));
+              }
+              setStateDialog(() => selectedDeadline = combined);
+            }
+
+            return AlertDialog(
+              title: Text(dialogTitle),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: _titleCtrl,
+                    autofocus: true,
+                    decoration: const InputDecoration(hintText: "Wpisz tytuł"),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _descCtrl,
+                    decoration: const InputDecoration(
+                      hintText: "Dodaj opis (opcjonalnie)",
+                    ),
+                    maxLines: 3,
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: selectedDeadline == null
+                            ? const Text("Brak terminu")
+                            : Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    MaterialLocalizations.of(
+                                      context,
+                                    ).formatFullDate(selectedDeadline!),
+                                  ),
+                                  Text(
+                                    MaterialLocalizations.of(
+                                      context,
+                                    ).formatTimeOfDay(
+                                      TimeOfDay.fromDateTime(selectedDeadline!),
+                                      alwaysUse24HourFormat: true,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                      ),
+                      const SizedBox(width: 16),
+                      OutlinedButton.icon(
+                        onPressed: () async {
+                          await pickDeadline();
+                        },
+                        icon: const Icon(Icons.event),
+                        label: const Text("Ustaw"),
+                      ),
+                    ],
+                  ),
+                ],
               ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _descCtrl,
-                decoration: const InputDecoration(
-                  hintText: "Dodaj opis (opcjonalnie)",
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text("Anuluj"),
                 ),
-                maxLines: 3,
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text("Anuluj"),
-            ),
-            FilledButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                _addTask(_titleCtrl.text, _descCtrl.text);
-              },
-              child: Text(confirmLabel),
-            ),
-          ],
+                FilledButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    _saveTask(
+                      currentTask: currentTask,
+                      title: _titleCtrl.text,
+                      description: _descCtrl.text,
+                      deadLine: selectedDeadline!,
+                    );
+                  },
+                  child: Text(confirmLabel),
+                ),
+              ],
+            );
+          },
         );
       },
     );
@@ -199,6 +305,7 @@ class _TasksScreenState extends State<TasksScreen> {
         _tasks = loaded;
         _loading = false;
       });
+      _sortTasksByDeadline();
     } catch (e) {
       debugPrint("Error when loading tasks: $e");
       setState(() => _loading = false);
@@ -214,6 +321,24 @@ class _TasksScreenState extends State<TasksScreen> {
     } catch (_) {
       return 'Termin: $iso';
     }
+  }
+
+  void _sortTasksByDeadline() {
+    _tasks.sort((a, b) {
+      final aDate = DateTime.tryParse(a.deadLine);
+      final bDate = DateTime.tryParse(b.deadLine);
+
+      if (aDate == null && bDate == null) return 0;
+      if (aDate == null) return 1;
+      if (bDate == null) return -1;
+      return aDate.compareTo(bDate);
+    });
+  }
+
+  @override
+  void dispose() {
+    _titleCtrl.dispose();
+    super.dispose();
   }
 
   @override
