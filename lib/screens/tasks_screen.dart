@@ -1,6 +1,26 @@
 import 'package:flutter/material.dart';
 import '../models/task.dart';
 import '../db/tasks_db.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:timezone/timezone.dart' as tz;
+
+final notifications = FlutterLocalNotificationsPlugin();
+
+Future<void> initNotifications() async {
+  const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
+
+  await notifications.initialize(
+    const InitializationSettings(android: androidInit),
+  );
+
+  // Android 13+
+  final android = notifications
+      .resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin
+      >();
+
+  await android?.requestNotificationsPermission();
+}
 
 class TasksScreen extends StatefulWidget {
   const TasksScreen({super.key});
@@ -117,6 +137,7 @@ class _TasksScreenState extends State<TasksScreen> {
             _tasks[i] = task.copyWith(isDone: !task.isDone);
           });
           _toggleTask(task, i);
+          await cancelDeadlineReminder(task.id!);
           try {
             await TasksDb.instance.updateTask(_tasks[i]);
           } catch (e) {
@@ -206,22 +227,38 @@ class _TasksScreenState extends State<TasksScreen> {
         messenger.showSnackBar(SnackBar(content: Text('Błąd usuwania: $e')));
       }
     }
+    await cancelDeadlineReminder(task.id!);
   }
 
   Future<void> _insertOrUpdateTask(Task task) async {
+    late Task savedTask;
+
     if (task.id == null) {
       // insert
       final id = await TasksDb.instance.insertTask(task);
+      savedTask = task.copyWith(id: id);
       setState(() {
         _tasks.add(task.copyWith(id: id));
       });
+      await scheduleDeadlineReminder(
+        id: savedTask.id!,
+        title: task.title,
+        deadline: DateTime.parse(task.deadLine),
+      );
     } else {
       // update
       await TasksDb.instance.updateTask(task);
+      savedTask = task;
       setState(() {
         final i = _tasks.indexWhere((t) => t.id == task.id);
         if (i != -1) _tasks[i] = task;
       });
+      await cancelDeadlineReminder(task.id!);
+      await scheduleDeadlineReminder(
+        id: savedTask.id!,
+        title: task.title,
+        deadline: DateTime.parse(task.deadLine),
+      );
     }
     _sortTasksByDeadline();
   }
@@ -481,6 +518,41 @@ class _TasksScreenState extends State<TasksScreen> {
     }
   }
 
+  Future<void> scheduleDeadlineReminder({
+    required int id,
+    required String title,
+    required DateTime deadline,
+  }) async {
+    final now = DateTime.now();
+    final diff = deadline.difference(now);
+    if (diff.isNegative) return;
+
+    final reminderTime = now.add(diff * 0.8);
+
+    if (reminderTime.isBefore(now)) return;
+
+    const android = AndroidNotificationDetails(
+      'deadlines',
+      'Task deadlines',
+      channelDescription: 'Przypomnienia o terminach zadań',
+      importance: Importance.high,
+      priority: Priority.high,
+    );
+
+    await notifications.zonedSchedule(
+      id,
+      'Zbliża się termin zadania: $title',
+      'Zostało Ci 20% zaplanowanego czasu',
+      tz.TZDateTime.from(reminderTime, tz.local),
+      const NotificationDetails(android: android),
+      androidScheduleMode: AndroidScheduleMode.inexact,
+    );
+  }
+
+  Future<void> cancelDeadlineReminder(int id) async {
+    await notifications.cancel(id);
+  }
+
   @override
   void dispose() {
     _titleCtrl.dispose();
@@ -491,5 +563,9 @@ class _TasksScreenState extends State<TasksScreen> {
   void initState() {
     super.initState();
     _loadTasks();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await initNotifications();
+    });
   }
 }

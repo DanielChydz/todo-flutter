@@ -3,14 +3,18 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:todo_flutter/screens/tasks_screen.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:timezone/data/latest.dart' as tz;
 
-void main() {
-  // for testing purposes
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // linux test setup
   if (!kIsWeb && Platform.isLinux) {
-    WidgetsFlutterBinding.ensureInitialized();
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
   }
+
+  tz.initializeTimeZones();
 
   runApp(const TodoApp());
 }
