@@ -17,6 +17,8 @@ dependencies:
   sqflite_common_ffi: ^2.3.6
   sqlite3: ^2.9.0
   timezone: any
+  geolocator: ^14.0.2
+  http: ^1.5.0
 
 dev_dependencies:
   flutter_test:

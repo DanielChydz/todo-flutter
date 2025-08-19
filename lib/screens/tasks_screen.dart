@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:todo_flutter/weather_banner.dart';
 import '../models/task.dart';
 import '../db/tasks_db.dart';
 import 'package:awesome_notifications/awesome_notifications.dart';
@@ -47,7 +48,13 @@ class _TasksScreenState extends State<TasksScreen> {
     final tasksDone = _tasks.where((t) => t.isDone).toList();
 
     return Scaffold(
-      appBar: AppBar(title: const Text("Twoje zadania"), centerTitle: true),
+      appBar: AppBar(
+        title: const Text("Twoje zadania"),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(60),
+          child: WeatherBannerMin(apiKey: '3f9fb21f275f7ecd96e0477e21625eed'),
+        ),
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: _openCreateDialog,
         child: const Icon(Icons.add),
