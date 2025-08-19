@@ -1,25 +1,27 @@
 import 'package:flutter/material.dart';
 import '../models/task.dart';
 import '../db/tasks_db.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:awesome_notifications/awesome_notifications.dart';
+import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 
-final notifications = FlutterLocalNotificationsPlugin();
-
 Future<void> initNotifications() async {
-  const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
+  await AwesomeNotifications().initialize(null, [
+    NotificationChannel(
+      channelKey: 'deadlines',
+      channelName: 'Terminy zadań',
+      channelDescription: 'Przypomnienia o terminach zadań',
+      importance: NotificationImportance.Max,
+      channelShowBadge: true,
+      defaultColor: const Color.fromARGB(255, 1, 146, 1),
+      ledColor: Colors.white,
+    ),
+  ], debug: true);
 
-  await notifications.initialize(
-    const InitializationSettings(android: androidInit),
-  );
-
-  // Android 13+
-  final android = notifications
-      .resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin
-      >();
-
-  await android?.requestNotificationsPermission();
+  final isAllowed = await AwesomeNotifications().isNotificationAllowed();
+  if (!isAllowed) {
+    await AwesomeNotifications().requestPermissionToSendNotifications();
+  }
 }
 
 class TasksScreen extends StatefulWidget {
@@ -137,7 +139,6 @@ class _TasksScreenState extends State<TasksScreen> {
             _tasks[i] = task.copyWith(isDone: !task.isDone);
           });
           _toggleTask(task, i);
-          await cancelDeadlineReminder(task.id!);
           try {
             await TasksDb.instance.updateTask(_tasks[i]);
           } catch (e) {
@@ -471,8 +472,8 @@ class _TasksScreenState extends State<TasksScreen> {
   }
 
   void _toggleTask(Task task, int index) async {
+    final nowDone = !task.isDone;
     setState(() {
-      final nowDone = !task.isDone;
       _tasks[index] = task.copyWith(isDone: nowDone);
 
       if (nowDone) {
@@ -531,26 +532,28 @@ class _TasksScreenState extends State<TasksScreen> {
 
     if (reminderTime.isBefore(now)) return;
 
-    const android = AndroidNotificationDetails(
-      'deadlines',
-      'Task deadlines',
-      channelDescription: 'Przypomnienia o terminach zadań',
-      importance: Importance.high,
-      priority: Priority.high,
-    );
-
-    await notifications.zonedSchedule(
-      id,
-      'Zbliża się termin zadania: $title',
-      'Zostało Ci 20% zaplanowanego czasu',
-      tz.TZDateTime.from(reminderTime, tz.local),
-      const NotificationDetails(android: android),
-      androidScheduleMode: AndroidScheduleMode.inexact,
+    await AwesomeNotifications().createNotification(
+      content: NotificationContent(
+        id: id,
+        channelKey: 'deadlines',
+        title: 'Zbliża się termin zadania: $title',
+        body: 'Zostało Ci 20% zaplanowanego czasu',
+        category: NotificationCategory.Reminder,
+        notificationLayout: NotificationLayout.Default,
+        wakeUpScreen: false,
+        criticalAlert: false,
+      ),
+      schedule: NotificationCalendar.fromDate(
+        date: reminderTime,
+        preciseAlarm: true,
+        allowWhileIdle: true,
+        repeats: false,
+      ),
     );
   }
 
   Future<void> cancelDeadlineReminder(int id) async {
-    await notifications.cancel(id);
+    await AwesomeNotifications().cancel(id);
   }
 
   @override
