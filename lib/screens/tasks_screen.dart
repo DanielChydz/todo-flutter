@@ -16,110 +16,158 @@ class _TasksScreenState extends State<TasksScreen> {
   final TextEditingController _titleCtrl = TextEditingController();
   final TextEditingController _descCtrl = TextEditingController();
 
+  int _doneCount = 0;
+  final Map<int, int> _doneByDay = {};
+
   @override
   Widget build(BuildContext context) {
+    final tasksTodo = _tasks.where((t) => !t.isDone).toList();
+    final tasksDone = _tasks.where((t) => t.isDone).toList();
+
     return Scaffold(
-      appBar: AppBar(title: Text("Twoje zadania")),
+      appBar: AppBar(title: const Text("Twoje zadania"), centerTitle: true),
       floatingActionButton: FloatingActionButton(
         onPressed: _openCreateDialog,
         child: const Icon(Icons.add),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : (_tasks.isEmpty
-                ? const Center(
-                    child: Text("Brak zadań. Kliknij +, by dodać pierwsze"),
-                  )
-                : ListView.builder(
-                    itemCount: _tasks.length,
-                    itemBuilder: (context, i) {
-                      final task = _tasks[i];
-                      return Dismissible(
-                        key: ValueKey(task.id ?? '${task.title}-$i'),
-                        direction: DismissDirection.startToEnd,
-                        background: Container(
-                          color: Colors.red,
-                          alignment: Alignment.centerLeft,
-                          padding: EdgeInsets.symmetric(horizontal: 16),
-                          child: Icon(Icons.delete, color: Colors.white),
-                        ),
-                        onDismissed: (_) => _deleteTaskAfterSwipe(task, i),
-                        child: CheckboxListTile(
-                          controlAffinity: ListTileControlAffinity.leading,
-                          value: task.isDone,
-                          fillColor: WidgetStateProperty.resolveWith((states) {
-                            if (states.contains(WidgetState.selected)) {
-                              return Colors.green;
-                            }
-                            return null;
-                          }),
-                          onChanged: (_) async {
-                            setState(() {
-                              _tasks[i] = task.copyWith(isDone: !task.isDone);
-                            });
-                            try {
-                              await TasksDb.instance.updateTask(_tasks[i]);
-                            } catch (e) {
-                              debugPrint("Error when updating task: $e");
-                            }
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(12.0),
+                  child: Text(
+                    "Wykonane zadania: $_doneCount\n"
+                    "Najproduktywniejszy dzień: $_productiveDay",
+                    style: const TextStyle(fontSize: 16),
+                  ),
+                ),
+
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  child: Text(
+                    "Do zrobienia",
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                Expanded(
+                  child: tasksTodo.isEmpty
+                      ? const Center(child: Text("Brak zadań do zrobienia"))
+                      : ListView.builder(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          itemCount: tasksTodo.length,
+                          itemBuilder: (context, i) {
+                            final task = tasksTodo[i];
+                            final originalIndex = _tasks.indexOf(task);
+                            return _buildTaskTile(task, originalIndex);
                           },
-                          title: Text(
-                            task.title,
-                            style: task.isDone
-                                ? const TextStyle(
-                                    decoration: TextDecoration.lineThrough,
-                                    color: Colors.grey,
-                                  )
-                                : null,
-                          ),
-                          subtitle: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if ((task.description ?? "").isNotEmpty)
-                                Text(
-                                  task.description!,
-                                  style: task.isDone
-                                      ? const TextStyle(
-                                          decoration:
-                                              TextDecoration.lineThrough,
-                                          color: Colors.grey,
-                                        )
-                                      : const TextStyle(color: Colors.black54),
-                                ),
-                              Row(
-                                children: [
-                                  const Icon(
-                                    Icons.schedule,
-                                    size: 14,
-                                    color: Colors.grey,
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    _formatDeadline(task.deadLine),
-                                    style: const TextStyle(
-                                      fontStyle: FontStyle.italic,
-                                      color: Colors.blueGrey,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                          secondary: IconButton(
-                            icon: const Icon(
-                              Icons.edit,
-                              size: 18,
-                              color: Colors.grey,
-                            ),
-                            splashRadius: 18,
-                            tooltip: 'Edytuj',
-                            onPressed: () => _openEditDialog(task),
-                          ),
                         ),
-                      );
-                    },
-                  )),
+                ),
+
+                const Divider(height: 1),
+
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  child: Text(
+                    "Zrobione",
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                Expanded(
+                  child: tasksDone.isEmpty
+                      ? const Center(child: Text("Brak wykonanych zadań"))
+                      : ListView.builder(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          itemCount: tasksDone.length,
+                          itemBuilder: (context, i) {
+                            final task = tasksDone[i];
+                            final originalIndex = _tasks.indexOf(task);
+                            return _buildTaskTile(task, originalIndex);
+                          },
+                        ),
+                ),
+              ],
+            ),
+    );
+  }
+
+  Widget _buildTaskTile(Task task, int i) {
+    return Dismissible(
+      key: ValueKey(task.id ?? '${task.title}-$i'),
+      direction: DismissDirection.startToEnd,
+      background: Container(
+        color: Colors.red,
+        alignment: Alignment.centerLeft,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: const Icon(Icons.delete, color: Colors.white),
+      ),
+      onDismissed: (_) => _deleteTaskAfterSwipe(task, i),
+      child: CheckboxListTile(
+        controlAffinity: ListTileControlAffinity.leading,
+        value: task.isDone,
+        fillColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return Colors.green;
+          }
+          return null;
+        }),
+        onChanged: (_) async {
+          setState(() {
+            _tasks[i] = task.copyWith(isDone: !task.isDone);
+          });
+          _toggleTask(task, i);
+          try {
+            await TasksDb.instance.updateTask(_tasks[i]);
+          } catch (e) {
+            debugPrint("Error when updating task: $e");
+          }
+        },
+        title: Text(
+          task.title,
+          style: task.isDone
+              ? const TextStyle(
+                  decoration: TextDecoration.lineThrough,
+                  color: Colors.grey,
+                )
+              : null,
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if ((task.description ?? "").isNotEmpty)
+              Text(
+                task.description!,
+                style: task.isDone
+                    ? const TextStyle(
+                        decoration: TextDecoration.lineThrough,
+                        color: Colors.grey,
+                      )
+                    : const TextStyle(color: Colors.black54),
+              ),
+            Row(
+              children: [
+                const Icon(Icons.schedule, size: 14, color: Colors.grey),
+                const SizedBox(width: 4),
+                Text(
+                  _formatDeadline(task.deadLine),
+                  style: const TextStyle(
+                    fontStyle: FontStyle.italic,
+                    color: Colors.blueGrey,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+        secondary: IconButton(
+          icon: const Icon(Icons.edit, size: 18, color: Colors.grey),
+          splashRadius: 18,
+          tooltip: 'Edytuj',
+          onPressed: () => _openEditDialog(task),
+        ),
+      ),
     );
   }
 
@@ -383,6 +431,54 @@ class _TasksScreenState extends State<TasksScreen> {
       if (bDate == null) return -1;
       return aDate.compareTo(bDate);
     });
+  }
+
+  void _toggleTask(Task task, int index) async {
+    setState(() {
+      final nowDone = !task.isDone;
+      _tasks[index] = task.copyWith(isDone: nowDone);
+
+      if (nowDone) {
+        _doneCount++;
+        final today = DateTime.now().weekday;
+        _doneByDay[today] = (_doneByDay[today] ?? 0) + 1;
+      } else {
+        _doneCount--;
+        final today = DateTime.now().weekday;
+        if ((_doneByDay[today] ?? 0) > 0) {
+          _doneByDay[today] = _doneByDay[today]! - 1;
+        }
+      }
+    });
+  }
+
+  String get _productiveDay {
+    if (_doneByDay.isEmpty) return "Brak danych";
+    final best = _doneByDay.entries.reduce(
+      (a, b) => a.value >= b.value ? a : b,
+    );
+    return _dayOfTheWeek(best.key);
+  }
+
+  String _dayOfTheWeek(int day) {
+    switch (day) {
+      case DateTime.monday:
+        return "Poniedziałek";
+      case DateTime.tuesday:
+        return "Wtorek";
+      case DateTime.wednesday:
+        return "Środa";
+      case DateTime.thursday:
+        return "Czwartek";
+      case DateTime.friday:
+        return "Piątek";
+      case DateTime.saturday:
+        return "Sobota";
+      case DateTime.sunday:
+        return "Niedziela";
+      default:
+        return "-";
+    }
   }
 
   @override
